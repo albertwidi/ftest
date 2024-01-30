@@ -1,13 +1,15 @@
-build:
-
-run: compose migrate
-	go run main.go
+run:
+	docker compose down --remove-orphans
+	docker compose --profile run up --force-recreate -d
+	sleep 7
+	./bootstrap.sh
 
 test: compose migrate
 	go test -v -race ./... -p=1
 
 compose:
-	docker-compose up -d
+	docker compose down --remove-orphans
+	docker compose --profile test up -d 
 
 migrate: compose
 # Give the chance for the container to start first. Its a bit annoying if we use the command indivudually though.

@@ -1,10 +1,5 @@
 version: '3'
 services:
-  ledger_service:
-    build:
-      context: .
-      dockerfile: Dockerfile
-
   test-postgres:
     image: library/postgres:16-alpine
     restart: unless-stopped
@@ -17,3 +12,60 @@ services:
       POSTGRES_DB: ledger
     volumes:
     - ./database:/data
+    healthcheck:
+      test: ["CMD", "pg_isready"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+    - svc
+    profiles: ["run", "test"]
+
+  postgres-setup:
+    image: library/postgres:16-alpine
+    restart: "no"
+    volumes:
+    - ./database:/data
+    entrypoint: ["sh", "-c", "sleep 2 && PGPASSWORD=postgres psql -h test-postgres -p 5432 -U postgres -d ledger -f /data/ledger/schema.sql"]
+    networks:
+    - svc
+    depends_on:
+    - test-postgres
+    profiles: ["run"]
+
+  ledger_service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+    - "8080"
+    environment:
+      POSTGRES_DSN: postgres://postgres:postgres@test-postgres:5432/ledger?sslmode=disable
+      DELAY_START: 2s
+    depends_on:
+    - postgres-setup
+    networks:
+    - svc
+    profiles: ["run"]
+    deploy:
+      mode: replicated
+      replicas: 3
+
+  envoy-proxy:
+    image: envoyproxy/envoy:v1.29.0
+    restart: unless-stopped
+    command:  ["/usr/local/bin/envoy", "-c", "/config/envoy.yaml", "-l", "debug"]
+    ports:
+    - "8080:8080"
+    volumes:
+    - ./envoy.yaml:/config/envoy.yaml
+    networks:
+    - svc
+    profiles: ["run"]
+    depends_on:
+    - ledger_service
+  
+
+networks:
+  svc:

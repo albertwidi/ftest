@@ -62,6 +62,9 @@ type Account struct {
 
 func (l *Ledger) CreateAccount(ctx context.Context, accountID, accountType string) (Account, error) {
 	var allowNegative bool
+	if accountType == "" {
+		accountType = AccountTypeUser
+	}
 	if accountType == AccountTypeFunding {
 		allowNegative = true
 	}

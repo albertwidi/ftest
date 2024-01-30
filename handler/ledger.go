@@ -7,8 +7,9 @@ import (
 	"net/http"
 	"net/url"
 
-	"github.com/albertwidi/ftest/ledger"
 	"github.com/shopspring/decimal"
+
+	"github.com/albertwidi/ftest/ledger"
 )
 
 // Handler provides http handlers for all ledger endpoints.
@@ -18,6 +19,66 @@ type Handler struct {
 
 func New(ld *ledger.Ledger) *Handler {
 	return &Handler{ld: ld}
+}
+
+type CreateAccountRequest struct {
+	// AccountID is optional, we will create a random UUID if account_id is not being mentioned.
+	AccountID string `json:"account_id"`
+	// AccountType defines the type of account we want to create. This is only for testing purpose.
+	AccountType string `json:"account_type"`
+}
+
+type CreateACcountResponse struct {
+	AccountID string `json:"account_id"`
+	CreatedAt string `json:"created_at"`
+}
+
+func (h *Handler) LedgerCreateAccount(w http.ResponseWriter, r *http.Request) {
+	out, err := io.ReadAll(r.Body)
+	if err != nil {
+		slog.Error(err.Error())
+		writeError(w, ErrorResponse{
+			Message: "failed to read json body request",
+			code:    http.StatusBadRequest,
+		})
+		return
+	}
+
+	req := CreateAccountRequest{}
+	if err := json.Unmarshal(out, &req); err != nil {
+		slog.Error(err.Error())
+		writeError(w, ErrorResponse{
+			Message: "invalid create account request format",
+			code:    http.StatusBadRequest,
+		})
+		return
+	}
+
+	acc, err := h.ld.CreateAccount(r.Context(), req.AccountID, req.AccountType)
+	if err != nil {
+		slog.Error(err.Error())
+		writeError(w, ErrorResponse{
+			Message: err.Error(),
+			code:    http.StatusBadRequest,
+		})
+		return
+	}
+
+	out, err = json.Marshal(CreateACcountResponse{
+		AccountID: acc.ID,
+		CreatedAt: acc.CreatedAt.String(),
+	})
+	if err != nil {
+		slog.Error(err.Error())
+		writeError(w, ErrorResponse{
+			Message: "failed to marshal response to client",
+			code:    http.StatusInternalServerError,
+		})
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	w.Write(out)
 }
 
 type TransferRequest struct {
@@ -114,6 +175,12 @@ func (h *Handler) LedgerGetBalance(w http.ResponseWriter, r *http.Request) {
 	}
 	balance, err := h.ld.GetAccountBalance(r.Context(), accountID)
 	if err != nil {
+		slog.Error(err.Error())
+		writeError(w, ErrorResponse{
+			Message: err.Error(),
+			code:    http.StatusBadRequest,
+		})
+		return
 	}
 
 	resp := GetBalanceResponse{
@@ -169,6 +236,12 @@ func (h *Handler) LedgerGetTransactionsByAccountID(w http.ResponseWriter, r *htt
 
 	entries, err := h.ld.GetAccountLedgerEntries(r.Context(), accountID)
 	if err != nil {
+		slog.Error(err.Error())
+		writeError(w, ErrorResponse{
+			Message: err.Error(),
+			code:    http.StatusBadRequest,
+		})
+		return
 	}
 
 	resp := GetTransactionsResponse{

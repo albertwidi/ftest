@@ -13,4 +13,4 @@ FROM alpine:latest
 WORKDIR /
 COPY --from=build /bin/ledger_service /ledger_service
 
-ENTRYPOINT ["./ledger_service""]
+ENTRYPOINT ["./ledger_service"]

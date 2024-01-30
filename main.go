@@ -10,10 +10,9 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	_ "github.com/lib/pq"
-
-	"github.com/shopspring/decimal"
 
 	"github.com/albertwidi/ftest/handler"
 	"github.com/albertwidi/ftest/ledger"
@@ -23,6 +22,9 @@ import (
 type config struct {
 	postgresDSN string
 	servicePort string
+	// delayStart is used as a quick hack to pause before starting the service. This is useful when we want
+	// to wait for other service in docker-compose.
+	delayStart string
 }
 
 func loadConfig() config {
@@ -34,14 +36,25 @@ func loadConfig() config {
 	if servicePort == "" {
 		servicePort = "8080"
 	}
+	delayStart := os.Getenv("DELAY_START")
+	if delayStart == "" {
+		delayStart = "0s"
+	}
 	return config{
 		postgresDSN: dsn,
 		servicePort: servicePort,
+		delayStart:  delayStart,
 	}
 }
 
 func main() {
 	config := loadConfig()
+
+	dur, err := time.ParseDuration(config.delayStart)
+	if err != nil {
+		panic(err)
+	}
+	time.Sleep(dur)
 
 	ctxSignal, cancel := signal.NotifyContext(context.Background(), syscall.SIGTERM)
 	defer cancel()
@@ -52,8 +65,6 @@ func main() {
 	}
 
 	ld := ledger.New(db)
-	bootstrap(ctxSignal, ld)
-
 	r := chi.NewRouter()
 	handle(ld, r)
 
@@ -82,57 +93,11 @@ func main() {
 	slog.Info("ledger service shutdown")
 }
 
-// bootstrap bootstraps the program by creating several accounts for testing purposes.
-//
-// The bootstrap functions creates these accounts:
-// 1. test-fund as an account that can fund another account.
-// 2. test-acc-1 as a user account.
-// 3. test-acc-2 as a user account.
-//
-// And also funds these following account with some balance:
-// 1. test-acc-1 with 10_000.
-// 2. test-acc-2 with 20_000.
-func bootstrap(ctx context.Context, ld *ledger.Ledger) {
-	slog.Info("creating test-fund account")
-	_, err := ld.CreateAccount(ctx, "test-fund", ledger.AccountTypeFunding)
-	if err != nil {
-		panic(err)
-	}
-	slog.Info("creating test-acc-1 account")
-	_, err = ld.CreateAccount(ctx, "test-acc-1", ledger.AccountTypeUser)
-	if err != nil {
-		panic(err)
-	}
-	slog.Info("creating test-acc-2 account")
-	_, err = ld.CreateAccount(ctx, "test-acc-2", ledger.AccountTypeUser)
-	if err != nil {
-		panic(err)
-	}
-
-	slog.Info("funding test-acc-1 account")
-	_, err = ld.Transfer(ctx, ledger.Transfer{
-		FromAccount: "test-fund",
-		ToAccount:   "test-acc-1",
-		Amount:      decimal.NewFromInt(10_000),
-	})
-	if err != nil {
-		panic(err)
-	}
-	slog.Info("funding test-acc-2 account")
-	_, err = ld.Transfer(ctx, ledger.Transfer{
-		FromAccount: "test-fund",
-		ToAccount:   "test-acc-2",
-		Amount:      decimal.NewFromInt(20_000),
-	})
-	if err != nil {
-		panic(err)
-	}
-}
-
 func handle(ld *ledger.Ledger, r chi.Router) {
 	handler := handler.New(ld)
 	r.Route("/v1/ledger", func(r chi.Router) {
 		r.Post("/transfer", handler.LedgerTransfer)
+		r.Post("/account", handler.LedgerCreateAccount)
 		r.Get("/balance", handler.LedgerGetBalance)
 		r.Get("/", handler.LedgerGetTransactionsByAccountID)
 	})
