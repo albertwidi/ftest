@@ -2,6 +2,10 @@
 
 Welcome to the ledger service, it's a place where you can store and transfer money from one account to another.
 
+## Requirements
+
+Please install `go` and `docker` in your local environment to run and test the program.
+
 ## NOTES
 
 The program is expected to be running from a clean state, this means the container must be brought down first when something goes wrong. This is because some bootstrap steps will fail due duplicates.
